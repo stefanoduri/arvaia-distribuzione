@@ -105,7 +105,7 @@ const App: React.FC = () => {
             <div className="bg-emerald-600 p-2 rounded-lg">
               <Database className="text-white w-5 h-5" />
             </div>
-            <h1 className="text-xl font-bold text-slate-900">AgroTrend <span className="text-emerald-600">Arvaia</span></h1>
+            <h1 className="text-xl font-bold text-slate-900">Arvaia <span className="text-emerald-600">Distribuzione 2025</span></h1>
           </div>
           <div className="hidden md:flex items-center gap-2 text-slate-400 text-sm italic">
             <Info className="w-4 h-4" />
