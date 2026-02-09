@@ -1,4 +1,3 @@
-
 import React from 'react';
 import { 
   BarChart, 
@@ -21,8 +20,10 @@ interface AgroChartProps {
 
 const AgroChart: React.FC<AgroChartProps> = ({ data, dataKey, title, color }) => {
   // Funzione per determinare il colore della barra in base al numero di giorni
+  // Se distCount è 0 (settimana vuota), usiamo un grigio leggero
   const getBarColor = (distCount: number) => {
-    // Se distCount è 2, usiamo un colore più scuro, altrimenti uno più chiaro
+    if (distCount === 0) return '#f1f5f9'; // Slate-100 per settimane senza dati
+    
     if (color.includes('#059669')) { // Tema Smeraldo
         return distCount === 2 ? '#047857' : '#34d399'; 
     }
@@ -36,16 +37,18 @@ const AgroChart: React.FC<AgroChartProps> = ({ data, dataKey, title, color }) =>
     <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 w-full h-[500px]">
       <h3 className="text-sm font-bold uppercase tracking-wide mb-10 text-slate-500">{title}</h3>
       <ResponsiveContainer width="100%" height="80%">
-        <BarChart data={data} margin={{ bottom: 40 }}>
+        <BarChart data={data} margin={{ bottom: 20 }}>
           <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
           <XAxis 
-            dataKey="label" 
+            dataKey="xLabel" 
             axisLine={false} 
             tickLine={false} 
-            tick={{ fill: '#94a3b8', fontSize: 10 }}
-            interval={0}
-            angle={-45}
-            textAnchor="end"
+            tick={{ fill: '#94a3b8', fontSize: 10, fontWeight: 600 }}
+            /* 
+               interval={1} mostra un'etichetta ogni due (es. S02, S04, S06...).
+               Questo evita la sovrapposizione dei testi mantenendo leggibile il grafico.
+            */
+            interval={1}
             dy={10}
           />
           <YAxis 
@@ -56,6 +59,12 @@ const AgroChart: React.FC<AgroChartProps> = ({ data, dataKey, title, color }) =>
           />
           <Tooltip 
             cursor={{ fill: '#f8fafc' }}
+            labelFormatter={(label, payload) => {
+               if (payload && payload[0]) {
+                 return payload[0].payload.fullLabel;
+               }
+               return label;
+            }}
             contentStyle={{ 
               borderRadius: '16px', 
               border: 'none', 
@@ -74,6 +83,8 @@ const AgroChart: React.FC<AgroChartProps> = ({ data, dataKey, title, color }) =>
             radius={[4, 4, 0, 0]} 
             name={dataKey === "pesoTotale" ? "Peso Totale" : "Peso per parte"}
             barSize={25}
+            // Disabilitiamo l'animazione se ci sono molti dati per migliorare la fluidità
+            isAnimationActive={false}
           >
             {data.map((entry, index) => (
               <Cell key={`cell-${index}`} fill={getBarColor(entry.distCount)} />

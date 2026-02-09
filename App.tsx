@@ -14,16 +14,18 @@ import AgroChart from './components/AgroChart';
 import { RAW_TSV_DATA } from './constants/rawData';
 
 /**
- * Calcola il lunedì della settimana specificata per l'anno 2025.
- * Basato sulla richiesta: Settimana 3 = 13/01/2025.
+ * Calcola la data del lunedì della settimana specificata per l'anno 2025.
+ * Basato sulla richiesta: Settimana 2 = 06/01/2025.
  */
-const getMondayLabel = (week: number): string => {
+const getMondayDate = (week: number): string => {
   const isoWeek1Monday = new Date(2024, 11, 30); 
   const targetMonday = new Date(isoWeek1Monday);
   targetMonday.setDate(isoWeek1Monday.getDate() + (week - 1) * 7);
   
-  return targetMonday.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit' });
+  return targetMonday.toLocaleDateString('it-IT', { day: '2-digit', month: '2-digit', year: 'numeric' });
 };
+
+const formatWeekLabel = (week: number): string => `S${week.toString().padStart(2, '0')}`;
 
 const App: React.FC = () => {
   const [data, setData] = useState<AgriData[]>([]);
@@ -46,10 +48,11 @@ const App: React.FC = () => {
 
   const productBaseData = useMemo(() => {
     if (!filters.prodotto || !filters.tipoParte) return [];
-    return data.filter(item => 
-      item.prodotto === filters.prodotto && 
-      item.tipoParte === filters.tipoParte
-    );
+    return data.filter(item => {
+      const matchProduct = item.prodotto === filters.prodotto;
+      const matchType = filters.tipoParte === 'Totale' ? true : item.tipoParte === filters.tipoParte;
+      return matchProduct && matchType;
+    });
   }, [data, filters.prodotto, filters.tipoParte]);
 
   const filteredData = useMemo(() => {
@@ -60,42 +63,51 @@ const App: React.FC = () => {
   const showCharts = filters.prodotto !== '' && filters.tipoParte !== '';
 
   const typeLabel = useMemo(() => {
+    if (filters.tipoParte === 'Totale') return "Totale (PI + MP)";
     if (filters.tipoParte === 'PI') return "Parte Intera";
     if (filters.tipoParte === 'MP') return "Mezza Parte";
     return filters.tipoParte;
   }, [filters.tipoParte]);
 
   const weeklyChartData = useMemo(() => {
-    if (!showCharts) return [];
+    if (!showCharts || data.length === 0) return [];
 
-    const map = new Map<string, { tot: number; perParteSum: number; count: number; days: Set<string> }>();
+    // Identifica il range di settimane presenti nel dataset intero (es. 2-51)
+    const allWeekNums = data.map(d => Number(d.settimana)).filter(n => !isNaN(n));
+    const minWeek = Math.min(...allWeekNums);
+    const maxWeek = Math.max(...allWeekNums);
+
+    const statsMap = new Map<number, { tot: number; partiSum: number; days: Set<string> }>();
     
     productBaseData.forEach(d => {
-      const week = d.settimana;
-      const current = map.get(week) || { tot: 0, perParteSum: 0, count: 0, days: new Set() };
+      const weekNum = Number(d.settimana);
+      const current = statsMap.get(weekNum) || { tot: 0, partiSum: 0, days: new Set() };
       current.days.add(d.giorno);
-      map.set(week, {
+      statsMap.set(weekNum, {
         tot: current.tot + d.pesoTotale,
-        perParteSum: current.perParteSum + d.pesoPerParte,
-        count: current.count + 1,
+        partiSum: current.partiSum + d.parti,
         days: current.days
       });
     });
 
-    return Array.from(map.entries())
-      .map(([settimana, stats]) => {
-        const weekNum = Number(settimana);
-        const monday = getMondayLabel(weekNum);
-        return {
-          label: `Sett. ${weekNum} (${monday})`,
-          weekNum: weekNum,
-          pesoTotale: Math.round(stats.tot * 100) / 100,
-          pesoPerParte: Math.round((stats.perParteSum / stats.count) * 1000) / 1000,
-          distCount: stats.days.size // 1 o 2 distribuzioni
-        };
-      })
-      .sort((a, b) => a.weekNum - b.weekNum);
-  }, [productBaseData, showCharts]);
+    const results = [];
+    // Cicliamo su tutte le settimane per garantire la continuità del grafico
+    for (let w = minWeek; w <= maxWeek; w++) {
+      const stats = statsMap.get(w) || { tot: 0, partiSum: 0, days: new Set() };
+      const mondayStr = getMondayDate(w);
+      const sLabel = formatWeekLabel(w);
+      results.push({
+        xLabel: sLabel,
+        fullLabel: `${sLabel} (${mondayStr})`,
+        weekNum: w,
+        pesoTotale: Math.round(stats.tot * 100) / 100,
+        pesoPerParte: stats.partiSum > 0 ? Math.round((stats.tot / stats.partiSum) * 1000) / 1000 : 0,
+        distCount: stats.days.size 
+      });
+    }
+
+    return results;
+  }, [productBaseData, data, showCharts]);
 
   return (
     <div className="min-h-screen bg-slate-50 pb-20">
@@ -145,6 +157,7 @@ const App: React.FC = () => {
                     onChange={(e) => setFilters(f => ({ ...f, tipoParte: e.target.value }))}
                   >
                     <option value="">Scegli Tipo...</option>
+                    <option value="Totale">Totale (PI + MP)</option>
                     {uniqueValues.tipoParte.map(v => <option key={v} value={v}>{v === 'PI' ? 'Parte Intera (PI)' : v === 'MP' ? 'Mezza Parte (MP)' : v}</option>)}
                   </select>
                 </div>
@@ -184,13 +197,17 @@ const App: React.FC = () => {
                    <div className="w-3 h-3 rounded bg-emerald-400 shadow-sm"></div>
                    <p className="text-xs text-slate-600">Distribuzione 1 giorno</p>
                  </div>
+                 <div className="flex items-center gap-3">
+                   <div className="w-3 h-3 rounded bg-slate-200 shadow-sm"></div>
+                   <p className="text-xs text-slate-400 italic">Settimana senza distribuzione</p>
+                 </div>
                </div>
             </div>
 
             <div className="bg-emerald-50 border border-emerald-100 p-5 rounded-2xl flex gap-3">
-              <Info className="w-5 h-5 text-emerald-600 shrink-0 mt-0.5" />
+              <span className="text-xl">📊</span>
               <p className="text-xs text-emerald-700 leading-relaxed">
-                <strong>Nota:</strong> Le barre con colore più scuro indicano settimane con distribuzione sia Martedì che Venerdì.
+                <strong>Nota:</strong> I grafici mostrano l'intero arco temporale (tutte le settimane). I vuoti indicano assenza di distribuzione.
               </p>
             </div>
           </aside>
@@ -213,12 +230,16 @@ const App: React.FC = () => {
                   <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
                     <p className="text-xs font-bold text-slate-400 uppercase mb-1">Media Peso per parte</p>
                     <p className="text-2xl font-black text-slate-800">
-                      {(filteredData.length > 0 ? (filteredData.reduce((acc, curr) => acc + curr.pesoPerParte, 0) / filteredData.length).toFixed(3) : "0")} kg
+                      {(() => {
+                        const totalW = filteredData.reduce((acc, curr) => acc + curr.pesoTotale, 0);
+                        const totalP = filteredData.reduce((acc, curr) => acc + curr.parti, 0);
+                        return totalP > 0 ? (totalW / totalP).toFixed(3) : "0.000";
+                      })()} kg
                     </p>
                   </div>
                   <div className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200">
                     <p className="text-xs font-bold text-slate-400 uppercase mb-1">Giornate Distinte</p>
-                    <p className="text-2xl font-black text-slate-800">{filteredData.length}</p>
+                    <p className="text-2xl font-black text-slate-800">{new Set(filteredData.map(d => d.data)).size}</p>
                   </div>
                 </div>
 
@@ -248,6 +269,7 @@ const App: React.FC = () => {
                           <th className="px-6 py-4">Data</th>
                           <th className="px-6 py-4">Settimana</th>
                           <th className="px-6 py-4">Giorno</th>
+                          <th className="px-6 py-4 text-center">Parte</th>
                           <th className="px-6 py-4 text-right">Peso per parte (kg)</th>
                           <th className="px-6 py-4 text-right">Parti</th>
                           <th className="px-6 py-4 text-right">Peso Tot (kg)</th>
@@ -257,8 +279,15 @@ const App: React.FC = () => {
                         {filteredData.map((row, i) => (
                           <tr key={i} className="hover:bg-slate-50 transition-colors">
                             <td className="px-6 py-4 font-medium text-slate-700">{row.data}</td>
-                            <td className="px-6 py-4 text-slate-500 font-mono text-xs">S. {row.settimana}</td>
-                            <td className="px-6 py-4 text-slate-500 text-center">{row.giorno}</td>
+                            <td className="px-6 py-4 text-slate-500 font-mono text-xs">
+                              {formatWeekLabel(Number(row.settimana))} ({getMondayDate(Number(row.settimana))})
+                            </td>
+                            <td className="px-6 py-4 text-slate-500 text-center font-bold">{row.giorno}</td>
+                            <td className="px-6 py-4 text-center">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${row.tipoParte === 'PI' ? 'bg-blue-100 text-blue-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                                {row.tipoParte}
+                              </span>
+                            </td>
                             <td className="px-6 py-4 text-right font-mono text-slate-600">{row.pesoPerParte.toFixed(3)}</td>
                             <td className="px-6 py-4 text-right font-mono text-slate-500">{row.parti}</td>
                             <td className="px-6 py-4 text-right font-bold text-slate-800">{row.pesoTotale.toFixed(2)}</td>
@@ -276,7 +305,7 @@ const App: React.FC = () => {
                 </div>
                 <h2 className="text-2xl font-bold text-slate-700 mb-2">Configurazione Analisi</h2>
                 <p className="text-slate-500 max-w-sm">
-                  Scegli un prodotto e un tipo di parte per caricare l'analisi storica delle distribuzioni Arvaia 2025.
+                  Scegli un prodotto e un tipo di parte per caricare l'analisi storica delle distribuzioni Arvaia 2025. Seleziona "Totale" per vedere il volume combinato.
                 </p>
               </div>
             )}

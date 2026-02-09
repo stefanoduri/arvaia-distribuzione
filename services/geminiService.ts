@@ -1,11 +1,11 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { AgriData } from "../types";
 
 export const getInsights = async (data: AgriData[]): Promise<string> => {
   if (data.length === 0) return "Nessun dato disponibile per l'analisi.";
 
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+  // Fix: Initializing GoogleGenAI with direct access to process.env.API_KEY as per instructions
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
   
   // Create a summary for AI context
   const summary = data.slice(0, 50).map(d => 
@@ -24,5 +24,6 @@ export const getInsights = async (data: AgriData[]): Promise<string> => {
     }
   });
 
+  // Use the .text property directly instead of calling .text() as a method
   return response.text || "Impossibile generare approfondimenti al momento.";
 };
